@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>MPU6050 3D Viewer (Web Serial)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<style>
+  html, body { height:100%; margin:0; background:#0f1115; color:#e6e6e6; font-family:system-ui, sans-serif; }
+  #ui { position:fixed; top:12px; left:12px; display:flex; gap:8px; align-items:center; z-index:10; }
+  button { background:#2d3748; color:#fff; border:0; padding:8px 12px; border-radius:6px; cursor:pointer; }
+  button:disabled { opacity:.5; cursor:not-allowed; }
+  #vals { background:#1a202c; padding:8px 10px; border-radius:6px; font-variant-numeric:tabular-nums; }
+  canvas { display:block; width:100vw; height:100vh; }
+</style>
+
+<!-- ใช้ ES Modules ของ three -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+</head>
+<body>
+<div id="ui">
+  <button id="connectBtn">Connect (Serial)</button>
+  <button id="zeroBtn" disabled>Zero</button>
+  <button id="disconnectBtn" disabled>Disconnect</button>
+  <div id="vals">ROLL: 0.00 | PITCH: 0.00 | YAW: 0.00</div>
+</div>
+<canvas id="c"></canvas>
+
+<!-- โค้ดหลักต้องอยู่ใน module และ import THREE ก่อนใช้ -->
+<script type="module">
+import * as THREE from 'three';
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0f1115);
+
+const camera = new THREE.PerspectiveCamera(60, 2, 0.1, 100);
+camera.position.set(0, 1.2, 3);
+scene.add(camera);
+
+const dir = new THREE.DirectionalLight(0xffffff, 1.0);
+dir.position.set(2, 3, 4);
+scene.add(dir);
+scene.add(new THREE.AmbientLight(0xffffff, .3));
+
+const axes = new THREE.AxesHelper(1.2);
+scene.add(axes);
+
+const geom = new THREE.BoxGeometry(1.6, 0.12, 0.9);
+const mat = new THREE.MeshStandardMaterial({ color:0x4fd1c5, metalness:.1, roughness:.5 });
+const board = new THREE.Mesh(geom, mat);
+scene.add(board);
+
+const grid = new THREE.GridHelper(10, 10, 0x334155, 0x1f2937);
+grid.position.y = -0.7;
+scene.add(grid);
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  if (canvas.width !== w || canvas.height !== h) {
+    renderer.setSize(w, h, false);
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+  }
+}
+
+let rollDeg = 0, pitchDeg = 0, yawDeg = 0;
+let rollZero = 0, pitchZero = 0, yawZero = 0;
+
+function updateBoardRotation() {
+  const roll  = THREE.MathUtils.degToRad(rollDeg  - rollZero);
+  const pitch = THREE.MathUtils.degToRad(pitchDeg - pitchZero);
+  const yaw   = THREE.MathUtils.degToRad(yawDeg   - yawZero);
+  board.rotation.set(pitch, yaw, roll, 'XYZ'); // X=pitch, Y=yaw, Z=roll
+}
+
+const vals = document.getElementById('vals');
+function updateText() {
+  vals.textContent = `ROLL: ${rollDeg.toFixed(2)} | PITCH: ${pitchDeg.toFixed(2)} | YAW: ${yawDeg.toFixed(2)}`;
+}
+
+function render() {
+  resize();
+  updateBoardRotation();
+  renderer.render(scene, camera);
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+// ---------- Web Serial ----------
+const connectBtn = document.getElementById('connectBtn');
+const zeroBtn = document.getElementById('zeroBtn');
+const disconnectBtn = document.getElementById('disconnectBtn');
+
+let port, reader, keepReading = false;
+
+function parseLine(line) {
+  // ทนต่อเครื่องหมาย ° และช่องว่าง
+  const rx = /ROLL:\s*([+\-]?\d+(?:\.\d+)?).*?PITCH:\s*([+\-]?\d+(?:\.\d+)?).*?YAW:\s*([+\-]?\d+(?:\.\d+)?)/i;
+  const m = line.match(rx);
+  if (m) {
+    rollDeg = parseFloat(m[1]);
+    pitchDeg = parseFloat(m[2]);
+    yawDeg   = parseFloat(m[3]);
+    updateText();
+    return;
+  }
+  const nums = line.match(/[+\-]?\d+(?:\.\d+)?/g);
+  if (nums && nums.length >= 3) {
+    rollDeg  = parseFloat(nums[0]);
+    pitchDeg = parseFloat(nums[1]);
+    yawDeg   = parseFloat(nums[2]);
+    updateText();
+  }
+}
+
+connectBtn.onclick = async () => {
+  try {
+    if (!('serial' in navigator)) { alert('ใช้ Chrome Desktop (Web Serial)'); return; }
+    // กรองเฉพาะชิป USB ที่พบบ่อย เพื่อตัดอุปกรณ์ BT ออก
+    const filters = [
+      { usbVendorId: 0x303A }, // Espressif
+      { usbVendorId: 0x10C4 }, // CP210x
+      { usbVendorId: 0x1A86 }, // CH340
+      { usbVendorId: 0x0403 }  // FTDI
+    ];
+    port = await navigator.serial.requestPort({ filters });
+    await port.open({ baudRate: 115200 });
+
+    const decoder = new TextDecoderStream();
+    port.readable.pipeTo(decoder.writable);
+    reader = decoder.readable.getReader();
+
+    connectBtn.disabled = true;
+    zeroBtn.disabled = false;
+    disconnectBtn.disabled = false;
+    keepReading = true;
+
+    (async () => {
+      let buf = '';
+      while (keepReading) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += value;
+        let i;
+        while ((i = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, i).trim();
+          buf = buf.slice(i + 1);
+          if (line) parseLine(line);
+        }
+      }
+    })();
+  } catch (e) {
+    console.error(e);
+    alert('เปิดพอร์ตไม่สำเร็จ: ปิด Serial Monitor/เลือก COM ของ ESP32 แล้วลองใหม่');
+  }
+};
+
+zeroBtn.onclick = () => {
+  rollZero = rollDeg; pitchZero = pitchDeg; yawZero = yawDeg;
+};
+
+disconnectBtn.onclick = async () => {
+  try {
+    keepReading = false;
+    if (reader) { await reader.cancel(); reader.releaseLock(); }
+    if (port) await port.close();
+  } catch {}
+  connectBtn.disabled = false;
+  zeroBtn.disabled = true;
+  disconnectBtn.disabled = true;
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,255 @@
+/*
+  ESP32 Landslide Monitor - 3D Viewer
+  Updated for BLE connection and landslide monitoring
+*/
+
+html {
+    font-family: Arial, sans-serif;
+    display: inline-block;
+    text-align: center;
+}
+
+p {
+    font-size: 1.2rem;
+}
+
+body {
+    margin: 0;
+    background-color: transparent; /* พื้นหลังโปร่งใส */
+}
+
+.topnav {
+    overflow: hidden;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+    color: #ffffff;
+    font-size: 1rem;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+    position: relative;
+}
+
+.topnav::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(45deg, transparent 30%, rgba(255,255,255,0.1) 50%, transparent 70%);
+    animation: shimmer 4s ease-in-out infinite;
+    pointer-events: none;
+}
+
+.topnav h1 {
+    margin: 0;
+    padding: 15px; /* Reduced from 20px */
+    font-size: 1.6rem; /* Reduced from 1.8rem */
+    text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    position: relative;
+    z-index: 1;
+}
+
+.content {
+    padding: 15px; /* Reduced from 20px */
+    max-width: 1200px;
+    margin: 0 auto;
+}
+
+.card {
+    background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.9) 100%);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+    border-radius: 15px;
+    padding: 20px; /* Reduced from 25px */
+    margin-bottom: 20px; /* Reduced from 25px */
+    transition: all 0.3s ease;
+    border: 1px solid rgba(255,255,255,0.2);
+    backdrop-filter: blur(10px);
+}
+
+.card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 15px 40px rgba(0,0,0,0.2);
+}
+
+.card-title {
+    color: #667eea;
+    font-weight: bold;
+    font-size: 1.1rem; /* Reduced from 1.2rem */
+    margin-bottom: 15px; /* Reduced from 20px */
+    border-bottom: 3px solid #f0f0f0;
+    padding-bottom: 10px; /* Reduced from 12px */
+    text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.cards {
+    max-width: 800px;
+    margin: 0 auto 20px auto; /* Reduced from 30px */
+    display: grid;
+    grid-gap: 15px; /* Reduced from 20px */
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); /* Reduced from 250px */
+}
+
+.reading {
+    font-size: 1rem; /* Reduced from 1.1rem */
+    color: #333;
+    display: block;
+    margin: 8px 0; /* Reduced from 10px */
+    padding: 6px 10px; /* Reduced from 8px 12px */
+    background: rgba(102, 126, 234, 0.1);
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+}
+
+.reading span {
+    font-weight: bold;
+    color: #667eea;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+}
+
+.cube-content {
+    width: 100%;
+    background: transparent; /* พื้นหลังโปร่งใสสมบูรณ์ */
+    height: 500px; /* Reduced from 600px to fit better */
+    margin: auto;
+    padding: 0; /* ลบ padding เพื่อให้ลูกบาศก์เต็มพื้นที่ */
+    border-radius: 0; /* ลบขอบมน */
+    box-shadow: none; /* ลบเงา */
+    position: relative;
+    overflow: hidden;
+    border: none; /* ลบขอบ */
+}
+
+/* ลบ shimmer effect ออกแล้ว */
+
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+}
+
+#3Dcube {
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0; /* ลบขอบมน */
+    overflow: hidden;
+    background: transparent; /* ลบพื้นหลังสีน้ำเงินเข้ม */
+    position: relative;
+    box-shadow: none; /* ลบเงา */
+}
+
+#3Dcube canvas {
+    display: block !important;
+    width: 100% !important;
+    height: 100% !important;
+    border-radius: 0; /* ลบขอบมน */
+}
+
+/* Button Styles */
+.btn-primary, .btn-secondary {
+    border: none;
+    color: #ffffff;
+    padding: 15px 25px;
+    text-align: center;
+    display: inline-block;
+    font-size: 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    margin: 8px;
+    transition: all 0.3s ease;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.btn-primary:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+}
+
+.btn-secondary {
+    background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+}
+
+.btn-secondary:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(231, 76, 60, 0.4);
+}
+
+.btn-primary:disabled, .btn-secondary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+}
+
+/* Reset buttons */
+#reset, #resetX, #resetY, #resetZ {
+    border: none;
+    color: #ffffff;
+    background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+    padding: 12px 18px;
+    text-align: center;
+    display: inline-block;
+    font-size: 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    margin: 6px;
+    transition: all 0.3s ease;
+    font-weight: bold;
+    box-shadow: 0 4px 15px rgba(39, 174, 96, 0.3);
+}
+
+#reset {
+    width: 160px;
+}
+
+#resetX, #resetY, #resetZ {
+    width: 45px;
+}
+
+#reset:hover, #resetX:hover, #resetY:hover, #resetZ:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 8px 25px rgba(39, 174, 96, 0.4);
+}
+
+/* Status indicators */
+#bleStatus {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+#bleStatus:contains("Connected") {
+    background-color: #27ae60;
+    color: white;
+}
+
+#bleStatus:contains("Disconnected") {
+    background-color: #e74c3c;
+    color: white;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .cards {
+        grid-template-columns: 1fr;
+    }
+    
+    .topnav h1 {
+        font-size: 1.2rem;
+    }
+    
+    .content {
+        padding: 15px;
+    }
+    
+    .cube-content {
+        height: 400px;
+    }
+}
+  
